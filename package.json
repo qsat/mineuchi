@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "request": "~2.30.0",
-    "jsdom": "~0.8.10"
+    "jsdom": "~0.8.10",
+    "mkdirp": "~0.3.5"
   }
 }

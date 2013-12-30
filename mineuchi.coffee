@@ -3,30 +3,46 @@
 # http://blog.sarabande.jp/post/52095868617
 
 # node_modules
-http = require('http')
-request = require('request')
-jsdom = require('jsdom')
 fs = require('fs')
+path = require('path')
+mkdirp = require('mkdirp')
+jsdom = require('jsdom')
 jquery = fs.readFileSync("./bower_components/jquery/jquery.min.js", "utf-8")
 
-# utility関数
-Yiai =
+# settings
+dest = './dest'
+origin = 'http://localhost:8080'
+
+# utility
+FileUtils =
+
   lineBy: (filename, encoding) ->
     encoding = encoding || 'utf8'
     str = fs.readFileSync filename, encoding
     str.split String.fromCharCode(10)
 
+  dirname: (p) ->
+    if path.extname(p) isnt ''
+      p = path.dirname p
+    return p
+
+  reqfile: (p) ->
+    if /\/$/.test p
+      p = "#{p}index.html"
+    return p
+
 # file lines
-lines = Yiai.lineBy 'filelist.txt'
+lines = FileUtils.lineBy 'filelist.txt'
 
-
-lines.forEach (url, index) ->
-  return if url is ''
+lines.forEach (path, index) ->
+  return if path is ''
   jsdom.env
-    url: url
+    url: origin + path
     src: [jquery]
     done: (error, window) ->
       $ = window.$
-      console.log $('body').html()
-#  request url, (error, response, body) ->
-#    console.log error, response, body
+      str = $('#header').html()
+      destpath = "#{dest}#{path}"
+      mkdirp.sync FileUtils.dirname(destpath)
+      fs.writeFileSync FileUtils.reqfile(destpath), str,
+        flag: 'a'
