@@ -3,23 +3,44 @@
 # http://blog.sarabande.jp/post/52095868617
 
 # node_modules
-fs = require('fs')
-path = require('path')
-mkdirp = require('mkdirp')
-jsdom = require('jsdom')
-jquery = fs.readFileSync("./bower_components/jquery/jquery.min.js", "utf-8")
+fs = require 'fs'
+path = require 'path'
+mkdirp = require 'mkdirp'
+jsdom = require 'jsdom'
+colors = require 'colors'
+jquery = fs.readFileSync "./bower_components/jquery/jquery.min.js", "utf-8"
+_ = require 'underscore'
 
-# settings
-dest = './dest'
-origin = 'http://localhost:8080'
+class Yiai
 
-# utility
-FileUtils =
+  constructor: () ->
+    @options = {}
+    @filelist = @options.filelist || 'filelist.txt'
+    @dest = @options.dest || "./dest"
+    @origin = @options.origin || 'http://localhost:8080'
+    @initialize()
+
+  initialize: () ->
+    lines = @lineBy(@filelist)
+    lines.forEach (path, index) =>
+      jsdom.env
+        url: "#{@origin}#{path}"
+        src: [jquery]
+        done: (error, window) =>
+          @complete(path, error, window)
+    
+  complete: (path, error, window) =>
+    $ = window.$
+    str = $('#container').html()
+    destpath = "#{@dest}#{path}"
+    @mkdir destpath, error, "mkdir"
+    @writeFile destpath, str, error, "write"
 
   lineBy: (filename, encoding) ->
     encoding = encoding || 'utf8'
     str = fs.readFileSync filename, encoding
-    str.split String.fromCharCode(10)
+    lines = str.split String.fromCharCode(10)
+    return _.compact(lines)
 
   dirname: (p) ->
     if path.extname(p) isnt ''
@@ -31,18 +52,19 @@ FileUtils =
       p = "#{p}index.html"
     return p
 
-# file lines
-lines = FileUtils.lineBy 'filelist.txt'
+  mkdir: (path, error, cmd) ->
+    mkdirp.sync @dirname(path)
+    @log error, cmd, path
 
-lines.forEach (path, index) ->
-  return if path is ''
-  jsdom.env
-    url: origin + path
-    src: [jquery]
-    done: (error, window) ->
-      $ = window.$
-      str = $('#header').html()
-      destpath = "#{dest}#{path}"
-      mkdirp.sync FileUtils.dirname(destpath)
-      fs.writeFileSync FileUtils.reqfile(destpath), str,
-        flag: 'a'
+  writeFile: (path, str, error, cmd) ->
+    path = @reqfile(path)
+    fs.writeFileSync path, str,
+      flag: 'a'
+    @log error, cmd, path
+
+  log: (error, cmd, path) ->
+    stat = if error then "NG".red else "OK".green
+    console.log "Yiai " + "#{stat} " + "#{cmd} ".magenta + path
+
+new Yiai()
+
