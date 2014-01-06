@@ -3,68 +3,91 @@
 # http://blog.sarabande.jp/post/52095868617
 
 # node_modules
+_ = require 'underscore'
 fs = require 'fs'
 path = require 'path'
-mkdirp = require 'mkdirp'
 jsdom = require 'jsdom'
+async = require 'async'
+mkdirp = require 'mkdirp'
 colors = require 'colors'
+request = require 'request'
 jquery = fs.readFileSync "./bower_components/jquery/jquery.min.js", "utf-8"
-_ = require 'underscore'
 
 class Yiai
+  list: {}
+  initConfig: (config)->
+    {@filelist, @dest, @origin, @patterns} = config
 
-  constructor: () ->
-    @options = {}
-    @filelist = @options.filelist || 'filelist.txt'
-    @dest = @options.dest || "./dest"
-    @origin = @options.origin || 'http://localhost:8080'
-    @initialize()
+  process: () ->
+    lines = @_lineBy(@filelist)
 
-  initialize: () ->
-    lines = @lineBy(@filelist)
-    lines.forEach (path, index) =>
-      jsdom.env
-        url: "#{@origin}#{path}"
-        src: [jquery]
-        done: (error, window) =>
-          @complete(path, error, window)
-    
-  complete: (path, error, window) =>
+    tasks = _.map lines, (path, index) =>
+      (next) =>
+        request uri:"#{@origin}#{path}", (e, res, body)=>
+          @log(res.statusCode == 404, "fetch", path)
+          @list[path] = { "statusCode": res.statusCode }
+
+          return next(null, index) if res.statusCode == 404
+
+          jsdom.env
+            html: body
+            src: [jquery]
+            done: (error, window) =>
+              @check path, window, res
+              @replace path, window, res
+              window.close()
+              next(null, index)
+
+    async.parallel tasks, (err, results) =>
+      console.log results, @list
+
+  check: (path, window, res)->
+    @list[path].check = _.compact _.map @patterns, (e, i) ->
+      i if _.every( _.map e.check, (f, j) -> f path, window, res )
+
+  replace: (path, window, res) ->
     $ = window.$
-    str = $('#container').html()
-    destpath = "#{@dest}#{path}"
-    @mkdir destpath, error, "mkdir"
-    @writeFile destpath, str, error, "write"
+    ptn = @list[path].check
 
-  lineBy: (filename, encoding) ->
-    encoding = encoding || 'utf8'
+    _.map ptn, (e, i) =>
+      _.map @patterns[e].replace, (replace, target) ->
+        $tar = $(target)
+        $tar.html replace $tar.html()
+
+    str = window.document.innerHTML
+
+    destpath = "#{@dest}#{path}"
+    @_mkdir destpath, "mkdir"
+    @_writeFile destpath, str, "write"
+
+  _lineBy: (filename, encoding="utf-8") ->
     str = fs.readFileSync filename, encoding
     lines = str.split String.fromCharCode(10)
     return _.compact(lines)
 
-  dirname: (p) ->
+  _dirname: (p) ->
     if path.extname(p) isnt ''
       p = path.dirname p
     return p
 
-  reqfile: (p) ->
+  _reqfile: (p) ->
     if /\/$/.test p
       p = "#{p}index.html"
     return p
 
-  mkdir: (path, error, cmd) ->
-    mkdirp.sync @dirname(path)
-    @log error, cmd, path
+  _mkdir: (path, cmd) ->
+    mkdirp.sync @_dirname(path)
+    @log 0, cmd, path
 
-  writeFile: (path, str, error, cmd) ->
-    path = @reqfile(path)
-    fs.writeFileSync path, str,
-      flag: 'a'
-    @log error, cmd, path
+  _writeFile: (path, str, cmd) ->
+    path = @_reqfile(path)
+    fs.writeFileSync path, str
+    @log 0, cmd, path
 
   log: (error, cmd, path) ->
     stat = if error then "NG".red else "OK".green
     console.log "Yiai " + "#{stat} " + "#{cmd} ".magenta + path
 
-new Yiai()
-
+yiai = new Yiai
+require("./Yiaifile")(yiai)
+yiai.process()
